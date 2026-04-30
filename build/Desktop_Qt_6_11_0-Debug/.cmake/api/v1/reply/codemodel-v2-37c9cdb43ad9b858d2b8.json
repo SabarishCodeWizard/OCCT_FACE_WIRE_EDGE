@@ -1,0 +1,78 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.16"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "OCCT_Industrial",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "appOCCT::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-appOCCT-Debug-afbf89843b5ad047b110.json",
+					"name" : "appOCCT",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "appOCCT_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-appOCCT_autogen-Debug-df18a6c62f855028ea28.json",
+					"name" : "appOCCT_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "appOCCT_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-appOCCT_autogen_timestamp_deps-Debug-2fdb7690c187079194dc.json",
+					"name" : "appOCCT_autogen_timestamp_deps",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/sabarish/occtPro/build/Desktop_Qt_6_11_0-Debug",
+		"source" : "/home/sabarish/occtPro"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 7
+	}
+}
