@@ -53,9 +53,10 @@ private:
 
     void initOCCT();
 
-    void processEdge(const TopoDS_Edge& edge, QTextStream& out);
-    void processWire(const TopoDS_Wire& wire, QTextStream& out);
-    void processFace(const TopoDS_Face& face, QTextStream& out);
+    // Update these three lines in your private section:
+    void processEdge(const TopoDS_Edge& edge, QTextStream& out, double resolution);
+    void processWire(const TopoDS_Wire& wire, QTextStream& out, double resolution);
+    void processFace(const TopoDS_Face& face, QTextStream& out, double resolution);
 };
 
 #endif // OCCTWIDGET_H

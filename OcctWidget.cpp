@@ -30,6 +30,7 @@
 #include <BRepBndLib.hxx>
 #include <Geom_Axis2Placement.hxx>
 #include <AIS_Trihedron.hxx>
+#include <QInputDialog>
 
 OcctWidget::OcctWidget(QWidget *parent) : QWidget(parent)
 {
@@ -171,6 +172,23 @@ void OcctWidget::saveSelectionToFile(const QString& filename)
 {
     if(myContext.IsNull()) return;
 
+    // --- NEW: Ask the user for the resolution in mm ---
+    bool ok;
+    double resolution = QInputDialog::getDouble(this,
+                                                tr("Set Robot Path Resolution"),
+                                                tr("Enter point spacing (mm):"),
+                                                2.0,   // Default value
+                                                0.1,   // Minimum value
+                                                100.0, // Maximum value
+                                                2,     // Decimals
+                                                &ok);
+
+    // If the user clicks "Cancel" on the dialog, stop the process
+    if (!ok) {
+        qDebug() << "Data extraction cancelled by user.";
+        return;
+    }
+
     QFile file(filename);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
         qWarning() << "Could not open file for writing:" << filename;
@@ -187,7 +205,6 @@ void OcctWidget::saveSelectionToFile(const QString& filename)
     while (myContext->MoreSelected()) {
         TopoDS_Shape shape = myContext->SelectedShape();
 
-        // Visually draw the selected path in the 3D viewer as a thick red line
         Handle(AIS_Shape) plottedPath = new AIS_Shape(shape);
         myContext->SetColor(plottedPath, Quantity_NOC_RED, Standard_False);
         myContext->SetWidth(plottedPath, 3.0, Standard_False);
@@ -195,16 +212,16 @@ void OcctWidget::saveSelectionToFile(const QString& filename)
 
         switch (shape.ShapeType()) {
         case TopAbs_FACE:
-            qDebug() << "Processing selected FACE...";
-            processFace(TopoDS::Face(shape), out);
+            qDebug() << "Processing selected FACE with resolution:" << resolution << "mm";
+            processFace(TopoDS::Face(shape), out, resolution);
             break;
         case TopAbs_WIRE:
-            qDebug() << "Processing selected WIRE...";
-            processWire(TopoDS::Wire(shape), out);
+            qDebug() << "Processing selected WIRE with resolution:" << resolution << "mm";
+            processWire(TopoDS::Wire(shape), out, resolution);
             break;
         case TopAbs_EDGE:
-            qDebug() << "Processing selected EDGE...";
-            processEdge(TopoDS::Edge(shape), out);
+            qDebug() << "Processing selected EDGE with resolution:" << resolution << "mm";
+            processEdge(TopoDS::Edge(shape), out, resolution);
             break;
         default:
             qWarning() << "Selected shape is not a Face, Wire, or Edge.";
@@ -218,31 +235,30 @@ void OcctWidget::saveSelectionToFile(const QString& filename)
     qDebug() << "Robot path successfully written to Excel file:" << filename;
 }
 
-void OcctWidget::processEdge(const TopoDS_Edge& edge, QTextStream& out)
+void OcctWidget::processFace(const TopoDS_Face& face, QTextStream& out, double resolution)
 {
-    Standard_Real first, last;
-    Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, first, last);
-    if (curve.IsNull()) return;
+    TopExp_Explorer wireExplorer(face, TopAbs_WIRE);
+    int loopCount = 1;
+    for (; wireExplorer.More(); wireExplorer.Next()) {
+        TopoDS_Wire wire = TopoDS::Wire(wireExplorer.Current());
+        QString boundaryMarker = QString("--- NEW BOUNDARY LOOP %1 ---").arg(loopCount);
+        out << boundaryMarker << "\n";
+        qDebug() << "\n" << boundaryMarker;
 
-    BRepAdaptor_Curve adaptor(edge);
-    GCPnts_UniformAbscissa discretizer(adaptor, 50);
-
-    if (discretizer.IsDone()) {
-        qDebug() << "--- Start Extracting EDGE (" << static_cast<int>(discretizer.NbPoints()) << " points) ---";
-        for (int i = 1; i <= discretizer.NbPoints(); ++i) {
-            Standard_Real param = discretizer.Parameter(i);
-            gp_Pnt pt = adaptor.Value(param);
-            out << pt.X() << "," << pt.Y() << "," << pt.Z() << "\n";
-            qDebug().nospace() << "  -> Pt " << i << ": [X: " << pt.X() << ", Y: " << pt.Y() << ", Z: " << pt.Z() << "]";
-        }
-        qDebug() << "--- Finished EDGE ---";
+        // Pass the resolution down to the wire
+        processWire(wire, out, resolution);
+        loopCount++;
     }
 }
 
-void OcctWidget::processWire(const TopoDS_Wire& wire, QTextStream& out)
+void OcctWidget::processWire(const TopoDS_Wire& wire, QTextStream& out, double resolution)
 {
     BRepAdaptor_CompCurve compCurve(wire, Standard_True);
-    GCPnts_UniformAbscissa discretizer(compCurve, 100);
+
+    // NEW: Use the user's resolution instead of a hardcoded 100 points
+    Standard_Real first = compCurve.FirstParameter();
+    Standard_Real last = compCurve.LastParameter();
+    GCPnts_UniformAbscissa discretizer(compCurve, resolution, first, last);
 
     if (discretizer.IsDone()) {
         qDebug() << "--- Start Extracting WIRE (" << static_cast<int>(discretizer.NbPoints()) << " points) ---";
@@ -256,17 +272,26 @@ void OcctWidget::processWire(const TopoDS_Wire& wire, QTextStream& out)
     }
 }
 
-void OcctWidget::processFace(const TopoDS_Face& face, QTextStream& out)
+void OcctWidget::processEdge(const TopoDS_Edge& edge, QTextStream& out, double resolution)
 {
-    TopExp_Explorer wireExplorer(face, TopAbs_WIRE);
-    int loopCount = 1;
-    for (; wireExplorer.More(); wireExplorer.Next()) {
-        TopoDS_Wire wire = TopoDS::Wire(wireExplorer.Current());
-        QString boundaryMarker = QString("--- NEW BOUNDARY LOOP %1 ---").arg(loopCount);
-        out << boundaryMarker << "\n";
-        qDebug() << "\n" << boundaryMarker;
-        processWire(wire, out);
-        loopCount++;
+    Standard_Real first, last;
+    Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, first, last);
+    if (curve.IsNull()) return;
+
+    BRepAdaptor_Curve adaptor(edge);
+
+    // NEW: Apply the user's resolution here
+    GCPnts_UniformAbscissa discretizer(adaptor, resolution, first, last);
+
+    if (discretizer.IsDone()) {
+        qDebug() << "--- Start Extracting EDGE (" << static_cast<int>(discretizer.NbPoints()) << " points) ---";
+        for (int i = 1; i <= discretizer.NbPoints(); ++i) {
+            Standard_Real param = discretizer.Parameter(i);
+            gp_Pnt pt = adaptor.Value(param);
+            out << pt.X() << "," << pt.Y() << "," << pt.Z() << "\n";
+            qDebug().nospace() << "  -> Pt " << i << ": [X: " << pt.X() << ", Y: " << pt.Y() << ", Z: " << pt.Z() << "]";
+        }
+        qDebug() << "--- Finished EDGE ---";
     }
 }
 
