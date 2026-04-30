@@ -4,7 +4,7 @@
 #include <QToolBar>
 #include <QPushButton>
 #include <QVBoxLayout>
-#include <QFileDialog> // NEW: Required for the file browser
+#include <QFileDialog>
 
 // ==========================================
 // 2. LOCAL HEADER INCLUDED SECOND
@@ -23,14 +23,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     topBar->setStyleSheet("QToolBar { background-color: #2D2D30; border-bottom: 2px solid #3E3E42; padding: 5px; }");
     addToolBar(Qt::TopToolBarArea, topBar);
 
-    // ==========================================
-    // NEW: Create the Load Model Button
-    // ==========================================
+    // Create the Load Model Button
     QPushButton *btnLoadModel = new QPushButton("📂 Load STEP Model");
     btnLoadModel->setCursor(Qt::PointingHandCursor);
     btnLoadModel->setStyleSheet(
         "QPushButton { "
-        "  background-color: #2E8B57; color: white; font-weight: bold; " // Industrial Green
+        "  background-color: #2E8B57; color: white; font-weight: bold; "
         "  padding: 8px 16px; border-radius: 4px; border: none; margin-right: 10px;"
         "} "
         "QPushButton:hover { background-color: #3CB371; }"
@@ -43,17 +41,33 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     btnSetOrigin->setCursor(Qt::PointingHandCursor);
     btnSetOrigin->setStyleSheet(
         "QPushButton { "
-        "  background-color: #007ACC; color: white; font-weight: bold; " // Industrial Blue
-        "  padding: 8px 16px; border-radius: 4px; border: none; "
+        "  background-color: #007ACC; color: white; font-weight: bold; "
+        "  padding: 8px 16px; border-radius: 4px; border: none; margin-right: 10px;"
         "} "
         "QPushButton:hover { background-color: #1C97EA; }"
         "QPushButton:pressed { background-color: #005A9E; }"
         );
     topBar->addWidget(btnSetOrigin);
 
+    // ==========================================
+    // NEW: Create the Reset Origin Button
+    // ==========================================
+    QPushButton *btnResetOrigin = new QPushButton("🔄 Reset Origin");
+    btnResetOrigin->setCursor(Qt::PointingHandCursor);
+    btnResetOrigin->setStyleSheet(
+        "QPushButton { "
+        "  background-color: #D2691E; color: white; font-weight: bold; " // Industrial Orange
+        "  padding: 8px 16px; border-radius: 4px; border: none; "
+        "} "
+        "QPushButton:hover { background-color: #CD853F; }"
+        "QPushButton:pressed { background-color: #A0522D; }"
+        );
+    topBar->addWidget(btnResetOrigin);
+
     // Connect the buttons to their actions
     connect(btnLoadModel, &QPushButton::clicked, this, &MainWindow::openLoadDialog);
     connect(btnSetOrigin, &QPushButton::clicked, this, &MainWindow::triggerOriginMode);
+    connect(btnResetOrigin, &QPushButton::clicked, this, &MainWindow::resetOrigin); // NEW
 }
 
 MainWindow::~MainWindow() {}
@@ -63,23 +77,23 @@ void MainWindow::triggerOriginMode()
     myOcctWidget->enableOriginSelectionMode();
 }
 
+void MainWindow::resetOrigin()
+{
+    myOcctWidget->resetOrigin();
+}
+
 void MainWindow::loadModel(const std::string& filepath)
 {
     myOcctWidget->loadStepFile(filepath);
 }
 
-// ==========================================
-// NEW: Implementation of the File Dialog
-// ==========================================
 void MainWindow::openLoadDialog()
 {
-    // Opens a native file browser filtered for STEP files
     QString fileName = QFileDialog::getOpenFileName(this,
                                                     tr("Open STEP File"),
-                                                    "", // Starts in the default directory
+                                                    "",
                                                     tr("STEP Files (*.step *.stp);;All Files (*)"));
 
-    // If the user actually selected a file (didn't hit cancel)
     if (!fileName.isEmpty()) {
         myOcctWidget->loadStepFile(fileName.toStdString());
     }
