@@ -1,0 +1,68 @@
+# =======================================================
+# Build Directories and CMake Artifacts
+# =======================================================
+build/
+build-*/
+cmake-build-*/
+out/
+bin/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+.cmake/
+
+# =======================================================
+# Compiled C++ Object Files and Libraries
+# =======================================================
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+
+# =======================================================
+# Executables (Including your specific app)
+# =======================================================
+*.exe
+*.out
+*.app
+appOCCT
+
+# =======================================================
+# Qt Generated Files (MOC, UIC, RCC)
+# =======================================================
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.pro.user
+.qmake.stash
+
+# =======================================================
+# IDE / Editor Folders (VS Code, CLion, Qt Creator)
+# =======================================================
+.vscode/
+.idea/
+*.swp
+*~
+
+# =======================================================
+# OS Generated Files (Windows/Mac)
+# =======================================================
+.DS_Store
+Thumbs.db
+
+# =======================================================
+# Project Specific Data (CAD files and exported CSVs)
+# =======================================================
+*.step
+*.stp
+*.csv
+robot_path.csv

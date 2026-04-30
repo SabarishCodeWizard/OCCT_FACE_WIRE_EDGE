@@ -15,6 +15,7 @@ find_package(OpenCASCADE REQUIRED)
 qt_add_executable(appOCCT
     main.cpp
     OcctWidget.h OcctWidget.cpp
+    .gitignore
 
 )
 
