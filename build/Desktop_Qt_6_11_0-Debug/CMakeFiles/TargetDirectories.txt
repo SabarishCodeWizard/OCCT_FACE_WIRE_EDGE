@@ -1,5 +1,0 @@
-/home/sabarish/occtPro/build/Desktop_Qt_6_11_0-Debug/CMakeFiles/appOCCT.dir
-/home/sabarish/occtPro/build/Desktop_Qt_6_11_0-Debug/CMakeFiles/edit_cache.dir
-/home/sabarish/occtPro/build/Desktop_Qt_6_11_0-Debug/CMakeFiles/rebuild_cache.dir
-/home/sabarish/occtPro/build/Desktop_Qt_6_11_0-Debug/CMakeFiles/appOCCT_autogen_timestamp_deps.dir
-/home/sabarish/occtPro/build/Desktop_Qt_6_11_0-Debug/CMakeFiles/appOCCT_autogen.dir

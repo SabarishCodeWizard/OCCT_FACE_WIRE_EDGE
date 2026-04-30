@@ -1,3 +1,0 @@
-# Hashes of file build rules.
-47d0b086941a7ef31809ad37ed875256 CMakeFiles/appOCCT_autogen
-7503b40c7d46086dfaabd08495b510fd appOCCT_autogen/timestamp
