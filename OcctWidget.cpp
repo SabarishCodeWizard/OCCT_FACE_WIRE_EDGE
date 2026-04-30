@@ -1,4 +1,3 @@
-
 #include <QMouseEvent>
 #include <QApplication>
 #include <QFile>
@@ -25,6 +24,12 @@
 #include <BRepAdaptor_Curve.hxx>
 #include <GCPnts_UniformAbscissa.hxx>
 #include <gp_Pnt.hxx>
+#include <GProp_GProps.hxx>
+#include <BRepGProp.hxx>
+#include <Bnd_Box.hxx>
+#include <BRepBndLib.hxx>
+#include <Geom_Axis2Placement.hxx>
+#include <AIS_Trihedron.hxx>
 
 OcctWidget::OcctWidget(QWidget *parent) : QWidget(parent)
 {
@@ -79,15 +84,61 @@ void OcctWidget::loadStepFile(const std::string& filePath)
         reader.TransferRoots();
         TopoDS_Shape shape = reader.OneShape();
 
+        // =====================================================================
+        // Professional extraction of Part Origin (Absolute, Mass, & Bounding Box)
+        // =====================================================================
+
+        // 1. Calculate Center of Mass (Volume Centroid)
+        GProp_GProps gprops;
+        BRepGProp::VolumeProperties(shape, gprops);
+        gp_Pnt centerOfMass = gprops.CentreOfMass();
+
+        // 2. Calculate Bounding Box and its Center
+        Bnd_Box boundingBox;
+        BRepBndLib::Add(shape, boundingBox);
+        Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+        boundingBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+        gp_Pnt boundingBoxCenter((xMin + xMax) / 2.0, (yMin + yMax) / 2.0, (zMin + zMax) / 2.0);
+
+        // Print to the debug console in a clean, professional format
+        qDebug() << "\n==========================================================";
+        qDebug() << "[MODEL ORIGIN DATA] STEP File Loaded Successfully";
+        qDebug() << "Absolute Part Origin   : [0.000, 0.000, 0.000] <-- (Wireframe Reference)";
+        qDebug().nospace() << "Center of Mass (X,Y,Z) : [" << centerOfMass.X() << ", " << centerOfMass.Y() << ", " << centerOfMass.Z() << "]";
+        qDebug().nospace() << "Bounding Box Center    : [" << boundingBoxCenter.X() << ", " << boundingBoxCenter.Y() << ", " << boundingBoxCenter.Z() << "]";
+        qDebug().nospace() << "Bounding Box Min limits: [" << xMin << ", " << yMin << ", " << zMin << "]";
+        qDebug().nospace() << "Bounding Box Max limits: [" << xMax << ", " << yMax << ", " << zMax << "]";
+        qDebug() << "==========================================================\n";
+        // =====================================================================
+
         Handle(AIS_Shape) aisShape = new AIS_Shape(shape);
 
         myContext->SetDisplayMode(aisShape, 1, Standard_False);
         myContext->Display(aisShape, Standard_True);
 
+        // =====================================================================
+        // NEW: VISUALLY HIGHLIGHT THE ORIGIN ON THE UPLOADED MODEL (Center of Mass)
+        // =====================================================================
+
+        //centerOfMass of the uploaded part!you can just change centerOfMass to boundingBoxCenter in that same line of code
+        gp_Ax2 partOriginCoords(centerOfMass, gp_Dir(0, 0, 1), gp_Dir(1, 0, 0));
+
+        Handle(Geom_Axis2Placement) originPlacement = new Geom_Axis2Placement(partOriginCoords);
+        Handle(AIS_Trihedron) originMarker = new AIS_Trihedron(originPlacement);
+
+        // Adjust the size of the axes to fit your part nicely
+        originMarker->SetSize(100.0);
+
+        // Display the Trihedron directly on the part
+        myContext->Display(originMarker, Standard_True);
+        // =====================================================================
+
         myView->FitAll();
         myView->Redraw();
 
         setSelectionMode(2); // Default to EDGE selection
+    } else {
+        qWarning() << "[ERROR] Failed to load STEP file:" << filePath.c_str();
     }
 }
 
@@ -177,7 +228,7 @@ void OcctWidget::processEdge(const TopoDS_Edge& edge, QTextStream& out)
     GCPnts_UniformAbscissa discretizer(adaptor, 50);
 
     if (discretizer.IsDone()) {
-       qDebug() << "--- Start Extracting EDGE (" << static_cast<int>(discretizer.NbPoints()) << " points) ---";
+        qDebug() << "--- Start Extracting EDGE (" << static_cast<int>(discretizer.NbPoints()) << " points) ---";
         for (int i = 1; i <= discretizer.NbPoints(); ++i) {
             Standard_Real param = discretizer.Parameter(i);
             gp_Pnt pt = adaptor.Value(param);

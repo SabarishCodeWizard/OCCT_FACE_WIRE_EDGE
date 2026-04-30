@@ -959,4 +959,22 @@ CMakeFiles/appOCCT.dir/OcctWidget.cpp.o: \
  /usr/include/opencascade/TColStd_SequenceOfAsciiString.hxx \
  /usr/include/opencascade/TColStd_Array1OfAsciiString.hxx \
  /usr/include/opencascade/AIS_Shape.hxx \
- /usr/include/opencascade/TopoDS.hxx /usr/include/opencascade/TopoDS.lxx
+ /usr/include/opencascade/TopoDS.hxx /usr/include/opencascade/TopoDS.lxx \
+ /usr/include/opencascade/GProp_GProps.hxx \
+ /usr/include/opencascade/BRepGProp.hxx \
+ /usr/include/opencascade/TColgp_Array1OfXYZ.hxx \
+ /usr/include/opencascade/BRepBndLib.hxx \
+ /usr/include/opencascade/Geom_Axis2Placement.hxx \
+ /usr/include/opencascade/Geom_AxisPlacement.hxx \
+ /usr/include/opencascade/AIS_Trihedron.hxx \
+ /usr/include/opencascade/AIS_TrihedronSelectionMode.hxx \
+ /usr/include/opencascade/Graphic3d_ArrayOfTriangles.hxx \
+ /usr/include/opencascade/Graphic3d_ArrayOfPrimitives.hxx \
+ /usr/include/opencascade/Graphic3d_ArrayFlags.hxx \
+ /usr/include/opencascade/Prs3d_DatumAspect.hxx \
+ /usr/include/opencascade/Prs3d_ArrowAspect.hxx \
+ /usr/include/opencascade/Prs3d_DatumAttribute.hxx \
+ /usr/include/opencascade/Prs3d_DatumAxes.hxx \
+ /usr/include/opencascade/Prs3d_DatumMode.hxx \
+ /usr/include/opencascade/Prs3d_DatumParts.hxx \
+ /usr/include/opencascade/Prs3d_PointAspect.hxx

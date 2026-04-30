@@ -79,7 +79,7 @@
 			{
 				"command" : 4,
 				"file" : 1,
-				"line" : 21,
+				"line" : 22,
 				"parent" : 0
 			},
 			{
@@ -335,7 +335,7 @@
 			{
 				"command" : 14,
 				"file" : 1,
-				"line" : 30,
+				"line" : 31,
 				"parent" : 0
 			}
 		]
@@ -659,11 +659,13 @@
 				"role" : "libraries"
 			},
 			{
-				"fragment" : "-ltbb",
+				"backtrace" : 48,
+				"fragment" : "/usr/lib/x86_64-linux-gnu/libtbb.so",
 				"role" : "libraries"
 			},
 			{
-				"fragment" : "-ltbbmalloc",
+				"backtrace" : 48,
+				"fragment" : "/usr/lib/x86_64-linux-gnu/libtbbmalloc.so",
 				"role" : "libraries"
 			},
 			{
