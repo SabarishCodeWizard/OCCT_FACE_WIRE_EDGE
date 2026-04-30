@@ -16,6 +16,7 @@ qt_add_executable(appOCCT
     main.cpp
     OcctWidget.h OcctWidget.cpp
     .gitignore
+    MainWindow.h MainWindow.cpp
 
 )
 

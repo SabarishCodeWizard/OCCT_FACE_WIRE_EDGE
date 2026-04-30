@@ -16,6 +16,11 @@
 #include <TopoDS_Wire.hxx>
 #include <TopoDS_Face.hxx>
 
+// --- NEW INCLUDES MOVED HERE TO FIX THE COMPILE ERROR ---
+#include <AIS_Trihedron.hxx>
+#include <Geom_Axis2Placement.hxx>
+// --------------------------------------------------------
+
 // ADD THIS TO KILL THE X11 MACRO CLASH
 #ifdef None
 #undef None
@@ -34,6 +39,9 @@ public:
     void setSelectionMode(int mode);
     void saveSelectionToFile(const QString& filename);
 
+    // Triggers the mode where the next click sets a new 0,0,0 coordinate
+    void enableOriginSelectionMode();
+
 protected:
     QPaintEngine* paintEngine() const override { return nullptr; }
 
@@ -51,9 +59,14 @@ private:
 
     QPoint myLastMousePos;
 
+    // Variables to handle custom coordinate origins
+    bool myIsSettingOriginMode = false;
+    gp_Pnt myCustomOrigin{0.0, 0.0, 0.0};
+    Handle(AIS_Trihedron) myOriginMarker;
+
     void initOCCT();
 
-    // Update these three lines in your private section:
+    // Requires the user-defined resolution parameter
     void processEdge(const TopoDS_Edge& edge, QTextStream& out, double resolution);
     void processWire(const TopoDS_Wire& wire, QTextStream& out, double resolution);
     void processFace(const TopoDS_Face& face, QTextStream& out, double resolution);

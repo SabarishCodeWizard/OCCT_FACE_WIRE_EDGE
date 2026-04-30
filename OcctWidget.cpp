@@ -1,9 +1,22 @@
+// ==========================================
+// 1. ALL QT HEADERS MUST BE INCLUDED FIRST
+// ==========================================
 #include <QMouseEvent>
 #include <QApplication>
 #include <QFile>
 #include <QTextStream>
 #include <QDebug>
+#include <QInputDialog>
+#include <QMessageBox>
+
+// ==========================================
+// 2. LOCAL HEADER INCLUDED SECOND
+// ==========================================
 #include "OcctWidget.h"
+
+// ==========================================
+// 3. OPENCASCADE & X11 HEADERS INCLUDED LAST
+// ==========================================
 #if defined(Q_OS_WIN)
 #include <WNT_Window.hxx>
 #elif defined(Q_OS_MAC)
@@ -16,7 +29,6 @@
 #include <Aspect_DisplayConnection.hxx>
 #include <STEPControl_Reader.hxx>
 #include <AIS_Shape.hxx>
-
 #include <TopAbs_ShapeEnum.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Shape.hxx>
@@ -30,12 +42,17 @@
 #include <BRepBndLib.hxx>
 #include <Geom_Axis2Placement.hxx>
 #include <AIS_Trihedron.hxx>
-#include <QInputDialog>
 
 OcctWidget::OcctWidget(QWidget *parent) : QWidget(parent)
 {
     setAttribute(Qt::WA_NoSystemBackground);
     setAttribute(Qt::WA_PaintOnScreen);
+
+    // --- THIS IS THE FIX ---
+    // Forces Qt to give this child widget a real X11 Window ID immediately
+    setAttribute(Qt::WA_NativeWindow);
+    // -----------------------
+
     setMouseTracking(true);
 }
 
@@ -77,7 +94,9 @@ void OcctWidget::initOCCT()
 void OcctWidget::loadStepFile(const std::string& filePath)
 {
     if (myView.IsNull()) initOCCT();
-
+    // --- NEW: Clear the viewer of old models before loading a new one ---
+    myContext->RemoveAll(Standard_True);
+    // --------------------------------------------------------------------
     STEPControl_Reader reader;
     IFSelect_ReturnStatus stat = reader.ReadFile(filePath.c_str());
 
@@ -85,54 +104,39 @@ void OcctWidget::loadStepFile(const std::string& filePath)
         reader.TransferRoots();
         TopoDS_Shape shape = reader.OneShape();
 
-        // =====================================================================
-        // Professional extraction of Part Origin (Absolute, Mass, & Bounding Box)
-        // =====================================================================
-
-        // 1. Calculate Center of Mass (Volume Centroid)
+        // 1. Calculate Center of Mass
         GProp_GProps gprops;
         BRepGProp::VolumeProperties(shape, gprops);
         gp_Pnt centerOfMass = gprops.CentreOfMass();
 
-        // 2. Calculate Bounding Box and its Center
+        // 2. Calculate Bounding Box
         Bnd_Box boundingBox;
         BRepBndLib::Add(shape, boundingBox);
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
         boundingBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
         gp_Pnt boundingBoxCenter((xMin + xMax) / 2.0, (yMin + yMax) / 2.0, (zMin + zMax) / 2.0);
 
-        // Print to the debug console in a clean, professional format
         qDebug() << "\n==========================================================";
         qDebug() << "[MODEL ORIGIN DATA] STEP File Loaded Successfully";
         qDebug() << "Absolute Part Origin   : [0.000, 0.000, 0.000] <-- (Wireframe Reference)";
         qDebug().nospace() << "Center of Mass (X,Y,Z) : [" << centerOfMass.X() << ", " << centerOfMass.Y() << ", " << centerOfMass.Z() << "]";
         qDebug().nospace() << "Bounding Box Center    : [" << boundingBoxCenter.X() << ", " << boundingBoxCenter.Y() << ", " << boundingBoxCenter.Z() << "]";
-        qDebug().nospace() << "Bounding Box Min limits: [" << xMin << ", " << yMin << ", " << zMin << "]";
-        qDebug().nospace() << "Bounding Box Max limits: [" << xMax << ", " << yMax << ", " << zMax << "]";
         qDebug() << "==========================================================\n";
-        // =====================================================================
 
         Handle(AIS_Shape) aisShape = new AIS_Shape(shape);
-
         myContext->SetDisplayMode(aisShape, 1, Standard_False);
         myContext->Display(aisShape, Standard_True);
 
         // =====================================================================
-        // NEW: VISUALLY HIGHLIGHT THE ORIGIN ON THE UPLOADED MODEL (Center of Mass)
+        // Initialize Custom Origin to Center of Mass initially
         // =====================================================================
-
-        //centerOfMass of the uploaded part!you can just change centerOfMass to boundingBoxCenter in that same line of code
-        gp_Ax2 partOriginCoords(centerOfMass, gp_Dir(0, 0, 1), gp_Dir(1, 0, 0));
+        myCustomOrigin = centerOfMass;
+        gp_Ax2 partOriginCoords(myCustomOrigin, gp_Dir(0, 0, 1), gp_Dir(1, 0, 0));
 
         Handle(Geom_Axis2Placement) originPlacement = new Geom_Axis2Placement(partOriginCoords);
-        Handle(AIS_Trihedron) originMarker = new AIS_Trihedron(originPlacement);
-
-        // Adjust the size of the axes to fit your part nicely
-        originMarker->SetSize(100.0);
-
-        // Display the Trihedron directly on the part
-        myContext->Display(originMarker, Standard_True);
-        // =====================================================================
+        myOriginMarker = new AIS_Trihedron(originPlacement);
+        myOriginMarker->SetSize(100.0);
+        myContext->Display(myOriginMarker, Standard_True);
 
         myView->FitAll();
         myView->Redraw();
@@ -168,11 +172,17 @@ void OcctWidget::setSelectionMode(int mode)
     }
 }
 
+void OcctWidget::enableOriginSelectionMode()
+{
+    myIsSettingOriginMode = true;
+    qDebug() << "\n[SYSTEM] Origin Selection Mode ACTIVATED. Click any part of the model to snap the origin to it.";
+}
+
 void OcctWidget::saveSelectionToFile(const QString& filename)
 {
     if(myContext.IsNull()) return;
 
-    // --- NEW: Ask the user for the resolution in mm ---
+    // Ask the user for the resolution in mm
     bool ok;
     double resolution = QInputDialog::getDouble(this,
                                                 tr("Set Robot Path Resolution"),
@@ -183,7 +193,6 @@ void OcctWidget::saveSelectionToFile(const QString& filename)
                                                 2,     // Decimals
                                                 &ok);
 
-    // If the user clicks "Cancel" on the dialog, stop the process
     if (!ok) {
         qDebug() << "Data extraction cancelled by user.";
         return;
@@ -196,7 +205,6 @@ void OcctWidget::saveSelectionToFile(const QString& filename)
     }
 
     QTextStream out(&file);
-
     if (file.size() == 0) {
         out << "X,Y,Z\n";
     }
@@ -245,7 +253,6 @@ void OcctWidget::processFace(const TopoDS_Face& face, QTextStream& out, double r
         out << boundaryMarker << "\n";
         qDebug() << "\n" << boundaryMarker;
 
-        // Pass the resolution down to the wire
         processWire(wire, out, resolution);
         loopCount++;
     }
@@ -255,7 +262,6 @@ void OcctWidget::processWire(const TopoDS_Wire& wire, QTextStream& out, double r
 {
     BRepAdaptor_CompCurve compCurve(wire, Standard_True);
 
-    // NEW: Use the user's resolution instead of a hardcoded 100 points
     Standard_Real first = compCurve.FirstParameter();
     Standard_Real last = compCurve.LastParameter();
     GCPnts_UniformAbscissa discretizer(compCurve, resolution, first, last);
@@ -265,8 +271,14 @@ void OcctWidget::processWire(const TopoDS_Wire& wire, QTextStream& out, double r
         for (int i = 1; i <= discretizer.NbPoints(); ++i) {
             Standard_Real param = discretizer.Parameter(i);
             gp_Pnt pt = compCurve.Value(param);
-            out << pt.X() << "," << pt.Y() << "," << pt.Z() << "\n";
-            qDebug().nospace() << "  -> Pt " << i << ": [X: " << pt.X() << ", Y: " << pt.Y() << ", Z: " << pt.Z() << "]";
+
+            // MATH: Absolute Point - Custom Origin = Local Coordinates
+            double localX = pt.X() - myCustomOrigin.X();
+            double localY = pt.Y() - myCustomOrigin.Y();
+            double localZ = pt.Z() - myCustomOrigin.Z();
+
+            out << localX << "," << localY << "," << localZ << "\n";
+            qDebug().nospace() << "  -> Pt " << i << ": [X: " << localX << ", Y: " << localY << ", Z: " << localZ << "]";
         }
         qDebug() << "--- Finished WIRE ---";
     }
@@ -279,8 +291,6 @@ void OcctWidget::processEdge(const TopoDS_Edge& edge, QTextStream& out, double r
     if (curve.IsNull()) return;
 
     BRepAdaptor_Curve adaptor(edge);
-
-    // NEW: Apply the user's resolution here
     GCPnts_UniformAbscissa discretizer(adaptor, resolution, first, last);
 
     if (discretizer.IsDone()) {
@@ -288,8 +298,14 @@ void OcctWidget::processEdge(const TopoDS_Edge& edge, QTextStream& out, double r
         for (int i = 1; i <= discretizer.NbPoints(); ++i) {
             Standard_Real param = discretizer.Parameter(i);
             gp_Pnt pt = adaptor.Value(param);
-            out << pt.X() << "," << pt.Y() << "," << pt.Z() << "\n";
-            qDebug().nospace() << "  -> Pt " << i << ": [X: " << pt.X() << ", Y: " << pt.Y() << ", Z: " << pt.Z() << "]";
+
+            // MATH: Absolute Point - Custom Origin = Local Coordinates
+            double localX = pt.X() - myCustomOrigin.X();
+            double localY = pt.Y() - myCustomOrigin.Y();
+            double localZ = pt.Z() - myCustomOrigin.Z();
+
+            out << localX << "," << localY << "," << localZ << "\n";
+            qDebug().nospace() << "  -> Pt " << i << ": [X: " << localX << ", Y: " << localY << ", Z: " << localZ << "]";
         }
         qDebug() << "--- Finished EDGE ---";
     }
@@ -315,9 +331,7 @@ void OcctWidget::mousePressEvent(QMouseEvent *event)
         int y = event->pos().y() * devicePixelRatio();
 
         myContext->MoveTo(x, y, myView, Standard_True);
-        myContext->MoveTo(x, y, myView, Standard_True);
 
-        // REPLACED FOR OCCT 7.5 COMPATIBILITY
         if (event->modifiers() & Qt::ShiftModifier) {
             myContext->ShiftSelect(Standard_True);
         } else {
@@ -325,13 +339,56 @@ void OcctWidget::mousePressEvent(QMouseEvent *event)
         }
 
         myView->Redraw();
-
         myContext->InitSelected();
+
         if (myContext->HasSelectedShape()) {
+
+            // ========================================================
+            // BRANCH 1: User is setting a new origin
+            // ========================================================
+            if (myIsSettingOriginMode) {
+                TopoDS_Shape selectedShape = myContext->SelectedShape();
+
+                // Calculate the exact bounding box center of whatever they clicked
+                Bnd_Box boundingBox;
+                BRepBndLib::Add(selectedShape, boundingBox);
+                Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+                boundingBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+                gp_Pnt newOriginSnap((xMin + xMax) / 2.0, (yMin + yMax) / 2.0, (zMin + zMax) / 2.0);
+
+                // Ask for confirmation using a professional message box
+                QString msg = QString("Do you want to set the new Robot Origin here?\n\nX: %1\nY: %2\nZ: %3")
+                                  .arg(newOriginSnap.X(), 0, 'f', 2)
+                                  .arg(newOriginSnap.Y(), 0, 'f', 2)
+                                  .arg(newOriginSnap.Z(), 0, 'f', 2);
+
+                if (QMessageBox::question(this, "Confirm New Origin", msg) == QMessageBox::Yes) {
+                    myCustomOrigin = newOriginSnap; // Save the offset
+
+                    // Move the visual Trihedron to the new spot
+                    gp_Ax2 newCoords(myCustomOrigin, gp_Dir(0, 0, 1), gp_Dir(1, 0, 0));
+                    Handle(Geom_Axis2Placement) placement = new Geom_Axis2Placement(newCoords);
+                    myOriginMarker->SetComponent(placement);
+                    myContext->Redisplay(myOriginMarker, Standard_True);
+
+                    qDebug() << "[SUCCESS] New Origin Set!";
+                }
+
+                // Turn off origin mode so the next click extracts data normally
+                myIsSettingOriginMode = false;
+                myContext->ClearSelected(Standard_True);
+                return; // Stop here so we don't trigger the CSV export
+            }
+
+            // ========================================================
+            // BRANCH 2: Normal Robot Path Extraction
+            // ========================================================
             qDebug() << "\n[SUCCESS] Geometry selected! Triggering data extraction...";
+            // Adjust this path back to your specific system layout as needed
             saveSelectionToFile("/home/sabarish/Downloads/robot_path.csv");
         } else {
-            qDebug() << "[WARNING] Clicked, but no geometry was detected under the mouse.";
+            // Un-comment if you want standard debug warnings for missed clicks
+            // qDebug() << "[WARNING] Clicked, but no geometry was detected under the mouse.";
         }
     }
 }
