@@ -14,6 +14,6 @@ int main(int argc, char *argv[])
     viewer.show();
 
     // Load your STEP file
-    viewer.loadStepFile("/home/sabarish/Downloads/step/link1.step");
+    viewer.loadStepFile("/home/sabarish/Downloads/step/link5.step");
     return app.exec();
 }
