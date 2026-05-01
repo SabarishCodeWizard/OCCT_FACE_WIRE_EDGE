@@ -47,7 +47,7 @@ OcctWidget::OcctWidget(QWidget *parent) : QWidget(parent)
 {
     setAttribute(Qt::WA_NoSystemBackground);
     setAttribute(Qt::WA_PaintOnScreen);
-    setAttribute(Qt::WA_NativeWindow); // Keeps the Alien Widget Crash away!
+    setAttribute(Qt::WA_NativeWindow);
     setMouseTracking(true);
 }
 
@@ -90,8 +90,9 @@ void OcctWidget::loadStepFile(const std::string& filePath)
 {
     if (myView.IsNull()) initOCCT();
 
-    // Clear the screen if loading a new file
+    // Wipe memory cleanly before loading
     myContext->RemoveAll(Standard_True);
+    clearSelections();
 
     STEPControl_Reader reader;
     IFSelect_ReturnStatus stat = reader.ReadFile(filePath.c_str());
@@ -100,34 +101,22 @@ void OcctWidget::loadStepFile(const std::string& filePath)
         reader.TransferRoots();
         TopoDS_Shape shape = reader.OneShape();
 
-        // Calculate Center of Mass
         GProp_GProps gprops;
         BRepGProp::VolumeProperties(shape, gprops);
         gp_Pnt centerOfMass = gprops.CentreOfMass();
 
-        // Calculate Bounding Box
         Bnd_Box boundingBox;
         BRepBndLib::Add(shape, boundingBox);
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
         boundingBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
         gp_Pnt boundingBoxCenter((xMin + xMax) / 2.0, (yMin + yMax) / 2.0, (zMin + zMax) / 2.0);
 
-        qDebug() << "\n==========================================================";
-        qDebug() << "[MODEL ORIGIN DATA] STEP File Loaded Successfully";
-        qDebug() << "Absolute Part Origin   : [0.000, 0.000, 0.000] <-- (Wireframe Reference)";
-        qDebug().nospace() << "Center of Mass (X,Y,Z) : [" << centerOfMass.X() << ", " << centerOfMass.Y() << ", " << centerOfMass.Z() << "]";
-        qDebug().nospace() << "Bounding Box Center    : [" << boundingBoxCenter.X() << ", " << boundingBoxCenter.Y() << ", " << boundingBoxCenter.Z() << "]";
-        qDebug() << "==========================================================\n";
-
         Handle(AIS_Shape) aisShape = new AIS_Shape(shape);
         myContext->SetDisplayMode(aisShape, 1, Standard_False);
         myContext->Display(aisShape, Standard_True);
 
-        // =====================================================================
-        // Initialize Custom Origin AND save it as the Default
-        // =====================================================================
-        myDefaultOrigin = centerOfMass; // Save the fallback state
-        myCustomOrigin = centerOfMass;  // Set current active state
+        myDefaultOrigin = centerOfMass;
+        myCustomOrigin = centerOfMass;
 
         gp_Ax2 partOriginCoords(myCustomOrigin, gp_Dir(0, 0, 1), gp_Dir(1, 0, 0));
         Handle(Geom_Axis2Placement) originPlacement = new Geom_Axis2Placement(partOriginCoords);
@@ -137,96 +126,119 @@ void OcctWidget::loadStepFile(const std::string& filePath)
 
         myView->FitAll();
         myView->Redraw();
+        setSelectionMode(2);
 
-        setSelectionMode(2); // Default to EDGE selection
+        emit statusUpdate("✅ Model Loaded Successfully. Ready for Selection.");
     } else {
-        qWarning() << "[ERROR] Failed to load STEP file:" << filePath.c_str();
+        emit statusUpdate("❌ Error: Failed to load STEP file.");
     }
 }
 
-// ==========================================
-// NEW: Reset Origin Logic
-// ==========================================
 void OcctWidget::resetOrigin()
 {
     if (myOriginMarker.IsNull()) {
-        QMessageBox::warning(this, "Warning", "Please load a STEP model first.");
+        emit statusUpdate("⚠️ Warning: No model loaded to reset.");
         return;
     }
 
     if (QMessageBox::question(this, "Reset Origin", "Are you sure you want to reset the origin back to the default Center of Mass?") == QMessageBox::Yes) {
-
-        // 1. Reset the internal math coordinate
         myCustomOrigin = myDefaultOrigin;
 
-        // 2. Visually snap the 3D Trihedron back
         gp_Ax2 defaultCoords(myCustomOrigin, gp_Dir(0, 0, 1), gp_Dir(1, 0, 0));
         Handle(Geom_Axis2Placement) placement = new Geom_Axis2Placement(defaultCoords);
         myOriginMarker->SetComponent(placement);
         myContext->Redisplay(myOriginMarker, Standard_True);
 
-        qDebug() << "\n[SUCCESS] Origin Reset to Default Center of Mass!";
+        emit statusUpdate("🔄 Origin Reset to Default Center of Mass. Note: CSV data will use this new origin on your next Path action.");
     }
 }
 
 void OcctWidget::setSelectionMode(int mode)
 {
     if(myContext.IsNull()) return;
-
     myContext->Deactivate();
 
     switch(mode) {
-    case 1:
-        myContext->Activate(AIS_Shape::SelectionMode(TopAbs_FACE));
-        qDebug() << "Selection Mode changed to: FACE";
-        break;
-    case 2:
-        myContext->Activate(AIS_Shape::SelectionMode(TopAbs_EDGE));
-        qDebug() << "Selection Mode changed to: EDGE";
-        break;
-    case 3:
-        myContext->Activate(AIS_Shape::SelectionMode(TopAbs_WIRE));
-        qDebug() << "Selection Mode changed to: WIRE";
-        break;
-    default:
-        myContext->Activate(0);
-        qDebug() << "Selection Mode changed to: WHOLE SHAPE";
+    case 1: myContext->Activate(AIS_Shape::SelectionMode(TopAbs_FACE)); break;
+    case 2: myContext->Activate(AIS_Shape::SelectionMode(TopAbs_EDGE)); break;
+    case 3: myContext->Activate(AIS_Shape::SelectionMode(TopAbs_WIRE)); break;
+    default: myContext->Activate(0);
     }
 }
 
 void OcctWidget::enableOriginSelectionMode()
 {
     myIsSettingOriginMode = true;
-    qDebug() << "\n[SYSTEM] Origin Selection Mode ACTIVATED. Click any part of the model to snap the origin to it.";
+    emit statusUpdate("🎯 Origin Mode ACTIVE: Click any edge, face, or wire on the 3D model to snap the origin to it.");
 }
 
-void OcctWidget::saveSelectionToFile(const QString& filename)
+// ====================================================================
+// NEW CORE ARCHITECTURE: History, Undo, Redo & CSV Generation
+// ====================================================================
+
+void OcctWidget::clearSelections()
 {
-    if(myContext.IsNull()) return;
+    // Remove all red lines from the screen
+    for (const auto& step : myPathHistory) myContext->Remove(step.visualRedPath, Standard_False);
+    for (const auto& step : myRedoStack) myContext->Remove(step.visualRedPath, Standard_False);
+
+    myPathHistory.clear();
+    myRedoStack.clear();
+    myContext->UpdateCurrentViewer();
+
+    regenerateCSV(); // This will clear the file
+    emit statusUpdate("❌ All selections cleared. CSV wiped.");
+}
+
+void OcctWidget::undoSelection()
+{
+    if (myPathHistory.empty()) {
+        emit statusUpdate("⚠️ Nothing to undo.");
+        return;
+    }
+
+    // Move from Active History to Redo Stack
+    PathData lastAction = myPathHistory.back();
+    myPathHistory.pop_back();
+    myContext->Remove(lastAction.visualRedPath, Standard_True); // Hide the red line
+    myRedoStack.push_back(lastAction);
+
+    regenerateCSV();
+    emit statusUpdate(QString("↩️ Undo successful. Current Paths in CSV: %1").arg(myPathHistory.size()));
+}
+
+void OcctWidget::redoSelection()
+{
+    if (myRedoStack.empty()) {
+        emit statusUpdate("⚠️ Nothing to redo.");
+        return;
+    }
+
+    // Move from Redo Stack back to Active History
+    PathData nextAction = myRedoStack.back();
+    myRedoStack.pop_back();
+    myContext->Display(nextAction.visualRedPath, Standard_True); // Show the red line again
+    myPathHistory.push_back(nextAction);
+
+    regenerateCSV();
+    emit statusUpdate(QString("↪️ Redo successful. Current Paths in CSV: %1").arg(myPathHistory.size()));
+}
+
+void OcctWidget::processCurrentSelection()
+{
+    if (myContext.IsNull() || !myContext->HasSelectedShape()) return;
 
     bool ok;
-    double resolution = QInputDialog::getDouble(this,
-                                                tr("Set Robot Path Resolution"),
-                                                tr("Enter point spacing (mm):"),
-                                                2.0,   0.1,  100.0, 2,  &ok);
+    double resolution = QInputDialog::getDouble(this, tr("Set Robot Path Resolution"), tr("Enter point spacing (mm):"), 2.0, 0.1, 100.0, 2, &ok);
 
     if (!ok) {
-        qDebug() << "Data extraction cancelled by user.";
+        emit statusUpdate("⚠️ Extraction cancelled by user.");
+        myContext->ClearSelected(Standard_True);
         return;
-    }
-
-    QFile file(filename);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-        qWarning() << "Could not open file for writing:" << filename;
-        return;
-    }
-
-    QTextStream out(&file);
-    if (file.size() == 0) {
-        out << "X,Y,Z\n";
     }
 
     myContext->InitSelected();
+    int addedCount = 0;
     while (myContext->MoreSelected()) {
         TopoDS_Shape shape = myContext->SelectedShape();
 
@@ -235,30 +247,45 @@ void OcctWidget::saveSelectionToFile(const QString& filename)
         myContext->SetWidth(plottedPath, 3.0, Standard_False);
         myContext->Display(plottedPath, Standard_True);
 
-        switch (shape.ShapeType()) {
-        case TopAbs_FACE:
-            qDebug() << "Processing selected FACE with resolution:" << resolution << "mm";
-            processFace(TopoDS::Face(shape), out, resolution);
-            break;
-        case TopAbs_WIRE:
-            qDebug() << "Processing selected WIRE with resolution:" << resolution << "mm";
-            processWire(TopoDS::Wire(shape), out, resolution);
-            break;
-        case TopAbs_EDGE:
-            qDebug() << "Processing selected EDGE with resolution:" << resolution << "mm";
-            processEdge(TopoDS::Edge(shape), out, resolution);
-            break;
-        default:
-            qWarning() << "Selected shape is not a Face, Wire, or Edge.";
-            break;
-        }
+        // Save the click to History
+        myPathHistory.push_back({shape, plottedPath, resolution});
+        addedCount++;
 
         myContext->NextSelected();
     }
 
-    file.close();
-    qDebug() << "Robot path successfully written to Excel file:" << filename;
+    myContext->ClearSelected(Standard_True);
+    myRedoStack.clear(); // Standard behavior: doing a new action destroys the Redo timeline
+
+    regenerateCSV();
+    emit statusUpdate(QString("✅ Extracted %1 new path(s). Total Paths in CSV: %2").arg(addedCount).arg(myPathHistory.size()));
 }
+
+void OcctWidget::regenerateCSV()
+{
+    QFile file(myCSVPath);
+    // WriteOnly + Truncate means it completely overwrites the old file instantly
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        qWarning() << "Could not open file for writing:" << myCSVPath;
+        return;
+    }
+
+    QTextStream out(&file);
+    out << "X,Y,Z\n";
+
+    // Play back the entire history stack to generate the perfect CSV state
+    for (const auto& step : myPathHistory) {
+        switch (step.shape.ShapeType()) {
+        case TopAbs_FACE: processFace(TopoDS::Face(step.shape), out, step.resolution); break;
+        case TopAbs_WIRE: processWire(TopoDS::Wire(step.shape), out, step.resolution); break;
+        case TopAbs_EDGE: processEdge(TopoDS::Edge(step.shape), out, step.resolution); break;
+        default: break;
+        }
+    }
+    file.close();
+}
+
+// ====================================================================
 
 void OcctWidget::processFace(const TopoDS_Face& face, QTextStream& out, double resolution)
 {
@@ -268,8 +295,6 @@ void OcctWidget::processFace(const TopoDS_Face& face, QTextStream& out, double r
         TopoDS_Wire wire = TopoDS::Wire(wireExplorer.Current());
         QString boundaryMarker = QString("--- NEW BOUNDARY LOOP %1 ---").arg(loopCount);
         out << boundaryMarker << "\n";
-        qDebug() << "\n" << boundaryMarker;
-
         processWire(wire, out, resolution);
         loopCount++;
     }
@@ -278,13 +303,11 @@ void OcctWidget::processFace(const TopoDS_Face& face, QTextStream& out, double r
 void OcctWidget::processWire(const TopoDS_Wire& wire, QTextStream& out, double resolution)
 {
     BRepAdaptor_CompCurve compCurve(wire, Standard_True);
-
     Standard_Real first = compCurve.FirstParameter();
     Standard_Real last = compCurve.LastParameter();
     GCPnts_UniformAbscissa discretizer(compCurve, resolution, first, last);
 
     if (discretizer.IsDone()) {
-        qDebug() << "--- Start Extracting WIRE (" << static_cast<int>(discretizer.NbPoints()) << " points) ---";
         for (int i = 1; i <= discretizer.NbPoints(); ++i) {
             Standard_Real param = discretizer.Parameter(i);
             gp_Pnt pt = compCurve.Value(param);
@@ -292,11 +315,8 @@ void OcctWidget::processWire(const TopoDS_Wire& wire, QTextStream& out, double r
             double localX = pt.X() - myCustomOrigin.X();
             double localY = pt.Y() - myCustomOrigin.Y();
             double localZ = pt.Z() - myCustomOrigin.Z();
-
             out << localX << "," << localY << "," << localZ << "\n";
-            qDebug().nospace() << "  -> Pt " << i << ": [X: " << localX << ", Y: " << localY << ", Z: " << localZ << "]";
         }
-        qDebug() << "--- Finished WIRE ---";
     }
 }
 
@@ -310,7 +330,6 @@ void OcctWidget::processEdge(const TopoDS_Edge& edge, QTextStream& out, double r
     GCPnts_UniformAbscissa discretizer(adaptor, resolution, first, last);
 
     if (discretizer.IsDone()) {
-        qDebug() << "--- Start Extracting EDGE (" << static_cast<int>(discretizer.NbPoints()) << " points) ---";
         for (int i = 1; i <= discretizer.NbPoints(); ++i) {
             Standard_Real param = discretizer.Parameter(i);
             gp_Pnt pt = adaptor.Value(param);
@@ -318,11 +337,8 @@ void OcctWidget::processEdge(const TopoDS_Edge& edge, QTextStream& out, double r
             double localX = pt.X() - myCustomOrigin.X();
             double localY = pt.Y() - myCustomOrigin.Y();
             double localZ = pt.Z() - myCustomOrigin.Z();
-
             out << localX << "," << localY << "," << localZ << "\n";
-            qDebug().nospace() << "  -> Pt " << i << ": [X: " << localX << ", Y: " << localY << ", Z: " << localZ << "]";
         }
-        qDebug() << "--- Finished EDGE ---";
     }
 }
 
@@ -357,7 +373,6 @@ void OcctWidget::mousePressEvent(QMouseEvent *event)
         myContext->InitSelected();
 
         if (myContext->HasSelectedShape()) {
-
             if (myIsSettingOriginMode) {
                 TopoDS_Shape selectedShape = myContext->SelectedShape();
 
@@ -368,9 +383,7 @@ void OcctWidget::mousePressEvent(QMouseEvent *event)
                 gp_Pnt newOriginSnap((xMin + xMax) / 2.0, (yMin + yMax) / 2.0, (zMin + zMax) / 2.0);
 
                 QString msg = QString("Do you want to set the new Robot Origin here?\n\nX: %1\nY: %2\nZ: %3")
-                                  .arg(newOriginSnap.X(), 0, 'f', 2)
-                                  .arg(newOriginSnap.Y(), 0, 'f', 2)
-                                  .arg(newOriginSnap.Z(), 0, 'f', 2);
+                                  .arg(newOriginSnap.X(), 0, 'f', 2).arg(newOriginSnap.Y(), 0, 'f', 2).arg(newOriginSnap.Z(), 0, 'f', 2);
 
                 if (QMessageBox::question(this, "Confirm New Origin", msg) == QMessageBox::Yes) {
                     myCustomOrigin = newOriginSnap;
@@ -380,7 +393,9 @@ void OcctWidget::mousePressEvent(QMouseEvent *event)
                     myOriginMarker->SetComponent(placement);
                     myContext->Redisplay(myOriginMarker, Standard_True);
 
-                    qDebug() << "[SUCCESS] New Origin Set!";
+                    emit statusUpdate("🎯 New Local Origin Set Successfully!");
+                } else {
+                    emit statusUpdate("Origin Setup Cancelled.");
                 }
 
                 myIsSettingOriginMode = false;
@@ -388,8 +403,8 @@ void OcctWidget::mousePressEvent(QMouseEvent *event)
                 return;
             }
 
-            qDebug() << "\n[SUCCESS] Geometry selected! Triggering data extraction...";
-            saveSelectionToFile("/home/sabarish/Downloads/robot_path.csv");
+            // Route standard clicks directly to the new History function
+            processCurrentSelection();
         }
     }
 }

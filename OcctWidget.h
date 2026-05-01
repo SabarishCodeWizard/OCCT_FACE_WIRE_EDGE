@@ -19,12 +19,25 @@
 #include <AIS_Trihedron.hxx>
 #include <Geom_Axis2Placement.hxx>
 
+// --- ADDED THIS LINE TO FIX THE ERROR ---
+#include <AIS_Shape.hxx>
+// ----------------------------------------
+
+#include <vector>
+
 // ADD THIS TO KILL THE X11 MACRO CLASH
 #ifdef None
 #undef None
 #endif
 
 class QTextStream;
+
+// Data structure to remember everything about a click
+struct PathData {
+    TopoDS_Shape shape;
+    Handle(AIS_Shape) visualRedPath;
+    double resolution;
+};
 
 class OcctWidget : public QWidget
 {
@@ -35,10 +48,18 @@ public:
 
     void loadStepFile(const std::string& filePath);
     void setSelectionMode(int mode);
-    void saveSelectionToFile(const QString& filename);
 
     void enableOriginSelectionMode();
-    void resetOrigin(); // NEW: Function to snap back to default
+    void resetOrigin();
+
+    // Public slots to trigger from MainWindow buttons
+    void undoSelection();
+    void redoSelection();
+    void clearSelections();
+
+signals:
+    // Broadcasts messages down to the Status Bar
+    void statusUpdate(const QString& msg);
 
 protected:
     QPaintEngine* paintEngine() const override { return nullptr; }
@@ -59,10 +80,19 @@ private:
 
     bool myIsSettingOriginMode = false;
     gp_Pnt myCustomOrigin{0.0, 0.0, 0.0};
-    gp_Pnt myDefaultOrigin{0.0, 0.0, 0.0}; // NEW: Stores the original Center of Mass
+    gp_Pnt myDefaultOrigin{0.0, 0.0, 0.0};
     Handle(AIS_Trihedron) myOriginMarker;
 
+    // Variables to manage History and the CSV
+    std::vector<PathData> myPathHistory;
+    std::vector<PathData> myRedoStack;
+    QString myCSVPath = "/home/sabarish/Downloads/robot_path.csv"; // Setup your output path here!
+
     void initOCCT();
+
+    // Centralized file writer
+    void processCurrentSelection();
+    void regenerateCSV();
 
     void processEdge(const TopoDS_Edge& edge, QTextStream& out, double resolution);
     void processWire(const TopoDS_Wire& wire, QTextStream& out, double resolution);

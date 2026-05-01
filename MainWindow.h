@@ -16,7 +16,7 @@ public:
 private slots:
     void triggerOriginMode();
     void openLoadDialog();
-    void resetOrigin(); // NEW: Slot for resetting the origin
+    void resetOrigin();
 
 private:
     OcctWidget *myOcctWidget;
